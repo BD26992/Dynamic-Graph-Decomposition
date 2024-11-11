@@ -1,0 +1,141 @@
+function out = mytgd(X0,W,A_true,prms)
+    [N,~,T] = size(X0);
+    R = prms.R;
+    X = reshape(X0,[N^2,T]);
+    A_t = reshape(A_true,[N^2,T]);
+    C = rand(R,T);
+    
+    beta = 100; %sparsity on A
+    gamma = prms.gamma; %norm 2 on A
+    rho = prms.rho; % fitting term 
+    la1 = 100; % norm 2 on C
+    la2 = 200; % temporal difference 
+
+    Dt=temporal_difference_matrix(T);
+    %alpha = 5e-4; 
+    %gamma = 1e-1;
+    %rho = 1;
+
+    max_iters = prms.max_iters;
+
+    for i = 1:max_iters
+        i
+        %Estimate A
+        cvx_begin quiet
+            variable A(N^2,R)
+            f0 = 0;
+            for r = 1:R
+                f0 = f0 + gamma*A(:,r)'*A(:,r) + beta*sum(A(:,r));
+            end
+            minimize(rho*norm(X-X.*(A*C),'fro') + f0)
+            subject to  
+            for r = 1:R
+                sum(A(:,r)) >= N;
+                reshape(A(:,r),[N,N]) == reshape(A(:,r),[N,N])';
+                trace(reshape(A(:,r),[N,N])) == 0;
+                %add orthgonality constraints
+            end
+            A>=0;
+        cvx_end
+
+        %%% Estimate C fixing A
+
+        cvx_begin quiet
+            variable C(R,T)
+            minimize(rho*norm(X-X.*(A*C),'fro') + la1*norm(C,'fro') + la2*norm(Dt*C','fro'))
+            subject to
+                C>=0;
+                sum(C)>=1;
+                %add smoothness for c
+        cvx_end
+        error = (norm(A_t-A*C,"fro")/norm(A_t,"fro"))^2;
+        error2 = (norm(A_t-A_t.*(A*C),"fro")/norm(A_t,"fro"))^2;
+        error3 = (norm(~A_t.*(A_t-(A*C),"fro")/norm(A_t,"fro"))^2;
+
+
+        figure(1)
+        subplot(312)
+        imagesc(reshape(A*C,[N,N*T]))
+        title('Estimated')
+        colorbar()
+        subplot(313)
+        imagesc(reshape(X,[N,N*T]))
+        colorbar()
+        title('Observed')
+        subplot(311)
+        imagesc(reshape(A_t,[N,N*T]))
+        title(['True: Iteration: ' num2str(i) ' error: ' num2str(error)])
+        colorbar()
+    end
+    out.T_hat = reshape(A*C,[N,N*T]);
+    out.A = reshape(A,[N,N*R]);
+    out.C = C;
+    out.np = N^2*R+R*T;
+end
+
+
+%%
+% function out = tgd_data(X0,W,prms)
+%     [N,~,T] = size(X0);
+%     R = prms.R;
+%     RR = 1:R;
+%     X = reshape(X0,[N^2,T]);
+%     Wr = reshape(W,[N^2,T])';
+%     C = rand(R,T);
+%     At = rand(N^2,R);
+%     alpha = 1e-1;%prms.alpha; 
+%     gamma = prms.gamma;
+%     beta = prms.beta;
+%     rho = 0;
+%     lambda = 1e-3;
+%     max_iters = prms.max_iters;
+%     ON = ones(N,1);
+%     for i = 1:max_iters
+%         %Estimate A
+%         for r = RR
+%             %compute residuals
+%             idx = RR(RR~=r);
+%             Z = X-At(:,idx)*C(idx,:);
+%             Ar = sum(At(:,idx),2); 
+%             Wc = reshape(C(r,:)*Wr,[N,N]);
+%             cvx_begin quiet
+%                 variable A(N^2,1)
+%                 expressions L(N,N)
+%                 L = diag(diag(reshape(A,[N,N])))-reshape(A,[N,N]);
+%                 minimize(rho*norm(Z-A*C(r,:),'fro') + alpha*trace(B*Wc) + gamma*norm(A,1) + beta*A'*Ar)
+%                 subject to  
+%                     diag(B) <= 1e-6;
+%                     sum(B) >=1;
+%                     B == B';
+%                     A>=0;
+%             cvx_end
+% 
+%             %update At
+%             At(:,r) = A;
+%         end
+%         %%% Estimate C fixing A
+%         for m = 1:T
+%             Zm = W(:,:,m);
+%             for n = 1:R
+%                 An = reshape(At(:,n),[N,N]);
+%                 Q(n,m) = 1/2*trace(Zm*An);
+%             end
+%         end
+% 
+%         cvx_begin quiet
+%             variable C(R,T)
+%             minimize(rho*norm(X-At*C,'fro') + alpha*sum(sum(Q.*C)))
+%             subject to
+%                 C>=0;
+%         cvx_end
+%         error = norm(X-At*C,"fro");
+%         figure(1)
+%         imagesc(reshape(At,[N,N*R]))
+%         colorbar()
+%         disp(error)
+%     end
+%     out.T_hat = reshape(At*C,[N,N*T]);
+%     out.A = reshape(At,[N,N*R]);
+%     out.C = C;
+%     out.np = N^2*R+R*T;
+% end
